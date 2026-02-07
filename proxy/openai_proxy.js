@@ -47,7 +47,14 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
-        // 1. Send to agentapi
+        // 1. 获取发送前的消息列表，记录最后一条消息的 ID
+        const beforeMsgRes = await fetch(`${AGENT_API_URL}/messages`);
+        const beforeData = await beforeMsgRes.json();
+        const lastMsgIdBefore = beforeData.messages.length > 0 
+          ? beforeData.messages[beforeData.messages.length - 1].id 
+          : -1;
+
+        // 2. Send to agentapi
         const postRes = await fetch(`${AGENT_API_URL}/message`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -61,26 +68,35 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
-        // 2. Poll for response
+        // 3. Poll for response - 等待新的 agent 消息
         let finalResponse = '';
         let attempts = 0;
         const maxAttempts = 300; // 5分钟超时（300秒，每秒轮询一次）
         
         while (attempts < maxAttempts) {
           await new Promise(r => setTimeout(r, 1000));
+          
+          // 获取最新消息列表
           const msgRes = await fetch(`${AGENT_API_URL}/messages`);
           const data = await msgRes.json();
           const messages = data.messages;
           
+          // 找到最后一条消息
           const lastMsg = messages[messages.length - 1];
-          if (lastMsg && lastMsg.role === 'agent' && lastMsg.id > 0) {
+          
+          // 检查是否有新的 agent 消息（ID 大于发送前的最后一条，且角色是 agent）
+          if (lastMsg && lastMsg.role === 'agent' && lastMsg.id > lastMsgIdBefore) {
+            // 检查状态是否已经稳定
             const statusRes = await fetch(`${AGENT_API_URL}/status`);
             const statusData = await statusRes.json();
+            
             if (statusData.status === 'stable') {
-                finalResponse = lastMsg.content;
-                break;
+              finalResponse = lastMsg.content;
+              break;
             }
+            // 如果还在运行中，继续等待
           }
+          
           attempts++;
         }
 
