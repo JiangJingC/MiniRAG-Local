@@ -405,7 +405,7 @@
     }
 
     // 创建模态框（可关闭，带结束会话按钮）
-    function createModal(title, content, stateKey = null) {
+    function createModal(title, content, stateKey = null, canClose = true) {
         const modal = document.createElement('div');
         modal.className = 'minirag-modal';
         
@@ -413,20 +413,32 @@
             <button class="minirag-end-session" style="padding: 6px 12px; background: #ef4444; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; margin-left: 10px;">结束会话</button>
         ` : '';
         
+        const closeBtn = canClose ? `<span class="minirag-close">×</span>` : '';
+        
         modal.innerHTML = `
             <div class="minirag-modal-content">
                 <div class="minirag-modal-header">
                     <span>${title}</span>
                     <div>
                         ${endSessionBtn}
-                        <span class="minirag-close">×</span>
+                        ${closeBtn}
                     </div>
                 </div>
                 <div class="minirag-response">${content}</div>
             </div>
         `;
         
-        modal.querySelector('.minirag-close').onclick = () => modal.remove();
+        if (canClose) {
+            const closeBtnEl = modal.querySelector('.minirag-close');
+            if (closeBtnEl) {
+                closeBtnEl.onclick = () => modal.remove();
+            }
+            
+            // 只有可关闭的弹框才允许点击外部关闭
+            modal.onclick = (e) => {
+                if (e.target === modal) modal.remove();
+            };
+        }
         
         if (stateKey) {
             const endBtn = modal.querySelector('.minirag-end-session');
@@ -443,15 +455,11 @@
             }
         }
         
-        modal.onclick = (e) => {
-            if (e.target === modal) modal.remove();
-        };
-        
         document.body.appendChild(modal);
         return modal;
     }
 
-    // 显示加载状态
+    // 显示加载状态（不可关闭）
     function showLoading(title) {
         const modal = createModal(title, `
             <div class="minirag-loading">
@@ -461,7 +469,7 @@
                     <div style="font-size: 13px; color: #999;">请保持标签页激活，切换可能导致中断</div>
                 </div>
             </div>
-        `);
+        `, null, false);  // canClose = false，加载中不允许关闭
         return modal;
     }
 
@@ -494,21 +502,27 @@
 
     // 1. 优化 Issue
     async function optimizeIssue() {
+        // 🔒 防止重复点击 - 立即检查并锁定
+        if (state.optimize.loading) {
+            createModal('⚠️ 提示', '优化任务正在进行中，请稍候...请勿重复点击。');
+            return;
+        }
+        
         // 如果有缓存结果，直接显示
         if (state.optimize.result) {
             createModal('✨ 优化结果', state.optimize.result, 'optimize');
             return;
         }
         
-        // 如果正在加载，提示用户
+        // 确认操作
+        const confirmed = await showConfirm('确定要对当前 Issue 进行优化吗？');
+        if (!confirmed) return;
+        
+        // 🔒 再次检查（防止确认期间状态变化）
         if (state.optimize.loading) {
             createModal('⚠️ 提示', '优化任务正在进行中，请稍候...');
             return;
         }
-        
-        // 确认操作
-        const confirmed = await showConfirm('确定要对当前 Issue 进行优化吗？');
-        if (!confirmed) return;
         
         const title = getIssueTitle();
         const content = getIssueContent();
@@ -519,6 +533,7 @@
             return;
         }
 
+        // 🔒 立即设置 loading 状态并更新 UI
         state.optimize.loading = true;
         updateButtonState('optimize');
         
@@ -558,18 +573,25 @@ ${content}${notes}
 
     // 2. 添加技术说明
     async function addTechnicalDetails() {
+        // 🔒 防止重复点击
+        if (state.technical.loading) {
+            createModal('⚠️ 提示', '技术说明生成任务正在进行中，请稍候...请勿重复点击。');
+            return;
+        }
+        
         if (state.technical.result) {
             createModal('📋 技术说明', state.technical.result, 'technical');
             return;
         }
         
+        const confirmed = await showConfirm('确定要生成技术说明吗？');
+        if (!confirmed) return;
+        
+        // 🔒 再次检查
         if (state.technical.loading) {
             createModal('⚠️ 提示', '技术说明生成任务正在进行中，请稍候...');
             return;
         }
-        
-        const confirmed = await showConfirm('确定要生成技术说明吗？');
-        if (!confirmed) return;
         
         const title = getIssueTitle();
         const content = getIssueContent();
@@ -580,6 +602,7 @@ ${content}${notes}
             return;
         }
 
+        // 🔒 立即锁定
         state.technical.loading = true;
         updateButtonState('technical');
         
@@ -619,18 +642,25 @@ ${content}${notes}
 
     // 3. 生成测试用例
     async function generateTestCases() {
+        // 🔒 防止重复点击
+        if (state.tests.loading) {
+            createModal('⚠️ 提示', '测试用例生成任务正在进行中，请稍候...请勿重复点击。');
+            return;
+        }
+        
         if (state.tests.result) {
             createModal('✅ 测试用例', state.tests.result, 'tests');
             return;
         }
         
+        const confirmed = await showConfirm('确定要生成测试用例吗？');
+        if (!confirmed) return;
+        
+        // 🔒 再次检查
         if (state.tests.loading) {
             createModal('⚠️ 提示', '测试用例生成任务正在进行中，请稍候...');
             return;
         }
-        
-        const confirmed = await showConfirm('确定要生成测试用例吗？');
-        if (!confirmed) return;
         
         const title = getIssueTitle();
         const content = getIssueContent();
@@ -641,6 +671,7 @@ ${content}${notes}
             return;
         }
 
+        // 🔒 立即锁定
         state.tests.loading = true;
         updateButtonState('tests');
         
@@ -680,18 +711,25 @@ ${content}${notes}
 
     // 4. 波及分析
     async function impactAnalysis() {
+        // 🔒 防止重复点击
+        if (state.impact.loading) {
+            createModal('⚠️ 提示', '波及分析任务正在进行中，请稍候...请勿重复点击。');
+            return;
+        }
+        
         if (state.impact.result) {
             createModal('🔍 波及分析', state.impact.result, 'impact');
             return;
         }
         
+        const confirmed = await showConfirm('确定要进行波及分析吗？');
+        if (!confirmed) return;
+        
+        // 🔒 再次检查
         if (state.impact.loading) {
             createModal('⚠️ 提示', '波及分析任务正在进行中，请稍候...');
             return;
         }
-        
-        const confirmed = await showConfirm('确定要进行波及分析吗？');
-        if (!confirmed) return;
         
         const title = getIssueTitle();
         const content = getIssueContent();
@@ -702,6 +740,7 @@ ${content}${notes}
             return;
         }
 
+        // 🔒 立即锁定
         state.impact.loading = true;
         updateButtonState('impact');
         
