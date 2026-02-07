@@ -64,7 +64,7 @@ const server = http.createServer(async (req, res) => {
         // 2. Poll for response
         let finalResponse = '';
         let attempts = 0;
-        const maxAttempts = 30; // 30 seconds timeout
+        const maxAttempts = 300; // 5分钟超时（300秒，每秒轮询一次）
         
         while (attempts < maxAttempts) {
           await new Promise(r => setTimeout(r, 1000));
@@ -86,7 +86,7 @@ const server = http.createServer(async (req, res) => {
 
         if (!finalResponse) {
           res.writeHead(504);
-          res.end(JSON.stringify({ error: 'Timeout waiting for agent response' }));
+          res.end(JSON.stringify({ error: 'Timeout waiting for agent response (5 minutes)' }));
           return;
         }
 
