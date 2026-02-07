@@ -515,7 +515,7 @@
         }
         
         // 确认操作
-        const confirmed = await showConfirm('确定要对当前 Issue 进行优化吗？');
+        const confirmed = await showConfirm('确定要对当前 Issue 进行优化吗 (请确保在issue有简短的issue信息描述)？');
         if (!confirmed) return;
         
         // 🔒 再次检查（防止确认期间状态变化）
@@ -544,17 +544,14 @@
 标题：
 ${title}
 
-内容：
-${content}${notes}
-
 要求：
 1. 优化语言表达，使其更专业清晰
 2. 补充必要的技术细节
 3. 调整格式，使其易于阅读
-4. 保持原意不变
-5. 如果有说明/讨论记录，也要考虑进去
 
-请使用 Markdown 格式返回，必须包含标题层级（如 ## 标题、### 子标题等），直接返回优化后的完整内容。不需要调用redmine mcp进行更新issue`;
+
+使用 redmine-issue-optimizer skill直接进行优化这个issue,当你优化issue后,直接回复一个更新成功,其他不用输出
+`;
 
         try {
             const response = await callMiniRAG(prompt);
@@ -584,7 +581,7 @@ ${content}${notes}
             return;
         }
         
-        const confirmed = await showConfirm('确定要生成技术说明吗？');
+        const confirmed = await showConfirm('确定要生成技术说明吗 (请确保在issue有简短的issue信息描述)？');
         if (!confirmed) return;
         
         // 🔒 再次检查
@@ -623,7 +620,8 @@ ${content}${notes}
 4. 说明潜在风险和解决方案
 5. 如果有说明/讨论记录，也要结合分析
 
-请使用 Markdown 格式返回，必须包含标题层级（如 ## 标题、### 子标题等）。`;
+请使用 Markdown 格式返回，必须包含标题层级（如 ## 标题、### 子标题等）。
+后面直接通过调用redmin mcp更新这个issue,将结果添加issue的说明(note)中.在你更新issue成功后,直接回复一个更新成功,其他不用输出`;
 
         try {
             const response = await callMiniRAG(prompt);
@@ -653,7 +651,7 @@ ${content}${notes}
             return;
         }
         
-        const confirmed = await showConfirm('确定要生成测试用例吗？');
+        const confirmed = await showConfirm('确定要生成测试用例吗 (请确保在issue有简短的issue信息描述)？');
         if (!confirmed) return;
         
         // 🔒 再次检查
@@ -692,7 +690,8 @@ ${content}${notes}
 4. 考虑边界条件
 5. 如果有说明/讨论记录，也要结合分析
 
-请使用 Markdown 表格格式返回测试用例，表格列包含：测试场景、前置条件、测试步骤、预期结果。必须包含标题层级（如 ## 测试用例）。`;
+请使用 Markdown 表格格式编写测试用例，表格列包含：测试场景、前置条件、测试步骤、预期结果。
+后面直接通过调用redmin mcp更新这个issue,将结果添加issue的说明(note)中.在你更新issue成功后,直接回复一个更新成功,其他不用输出`;
 
         try {
             const response = await callMiniRAG(prompt);
@@ -722,7 +721,7 @@ ${content}${notes}
             return;
         }
         
-        const confirmed = await showConfirm('确定要进行波及分析吗？');
+        const confirmed = await showConfirm('确定要进行波及分析吗 (请确保在issue有简短的issue信息描述)？');
         if (!confirmed) return;
         
         // 🔒 再次检查
@@ -757,13 +756,11 @@ ${content}${notes}
 要求：
 1. **请优先使用当前文档库中的信息进行检索分析**，查找相关的模块、组件、接口文档
 2. 分析这个 Issue 可能影响的功能模块
-3. 列出可能涉及的代码模块和依赖关系
+3. 列出可能涉及的NSAG产品的代码模块
 4. 说明对现有功能的潜在影响
 5. 提供测试建议和风险评估
-6. 如果文档库中有相关的架构文档、接口文档或模块说明，请引用并关联分析
-7. 如果有说明/讨论记录，也要结合分析
 
-请使用 Markdown 格式返回，必须包含标题层级（如 ## 波及分析、### 影响模块等），方便测试团队评估和测试。`;
+请使用 Markdown 格式返回，必须包含标题层级（如 ## 波及分析、### 影响模块等），方便测试团队评估和测试。后面直接通过调用redmin mcp更新这个issue,将结果添加issue的说明(note)中.在你更新issue成功后,直接回复一个更新成功,其他不用输出`;
 
         try {
             const response = await callMiniRAG(prompt);
