@@ -305,7 +305,9 @@
                     'Content-Type': 'application/json'
                 },
                 data: JSON.stringify(requestData),
-                timeout: 180000, // 3分钟超时（180秒 = 180000毫秒）
+                timeout: 300000, // 5分钟超时（300秒 = 300000毫秒），与 proxy 保持一致
+                anonymous: true, // 防止浏览器干扰
+                synchronous: false, // 明确异步模式
                 onload: function(response) {
                     debugLog('===== 收到响应 =====');
                     debugLog('响应状态:', response.status);
@@ -339,11 +341,20 @@
                 },
                 onerror: function(error) {
                     debugLog('网络错误:', error);
-                    reject(new Error('网络请求失败，请确保 MiniRAG 服务正在运行'));
+                    // 检查是否是 background shutdown
+                    if (error && error.error === 'background shutdown') {
+                        reject(new Error('请求被浏览器中断（标签页进入后台），请保持标签页激活状态'));
+                    } else {
+                        reject(new Error('网络请求失败，请确保 MiniRAG 服务正在运行'));
+                    }
+                },
+                onabort: function() {
+                    debugLog('请求被中止');
+                    reject(new Error('请求被中止，请重试'));
                 },
                 ontimeout: function() {
-                    debugLog('请求超时（3分钟）');
-                    reject(new Error('请求超时（已等待3分钟），请检查 MiniRAG 服务状态或减少内容长度'));
+                    debugLog('请求超时（5分钟）');
+                    reject(new Error('请求超时（已等待5分钟），请检查 MiniRAG 服务状态或减少内容长度'));
                 }
             });
         });
@@ -355,12 +366,15 @@
             const modal = document.createElement('div');
             modal.className = 'minirag-modal';
             modal.innerHTML = `
-                <div class="minirag-modal-content" style="max-width: 400px;">
+                <div class="minirag-modal-content" style="max-width: 450px;">
                     <div class="minirag-modal-header">
                         <span>⚠️ 确认操作</span>
                     </div>
                     <div style="padding: 20px 0; font-size: 15px; color: #333;">
                         ${message}
+                    </div>
+                    <div style="padding: 12px; background: #fff3cd; border-radius: 6px; margin: 10px 0; font-size: 13px; color: #856404;">
+                        <strong>⚠️ 重要提示：</strong>请在 AI 处理完成前保持此标签页激活状态，切换标签页可能导致请求中断。
                     </div>
                     <div style="display: flex; gap: 10px; justify-content: flex-end;">
                         <button class="minirag-confirm-cancel" style="padding: 8px 20px; background: #e2e8f0; border: none; border-radius: 6px; cursor: pointer;">取消</button>
@@ -442,7 +456,10 @@
         const modal = createModal(title, `
             <div class="minirag-loading">
                 <div class="minirag-spinner"></div>
-                <span>AI 正在思考中...</span>
+                <div style="text-align: center;">
+                    <div style="margin-bottom: 8px; font-size: 15px; font-weight: 500;">AI 正在思考中...</div>
+                    <div style="font-size: 13px; color: #999;">请保持标签页激活，切换可能导致中断</div>
+                </div>
             </div>
         `);
         return modal;
