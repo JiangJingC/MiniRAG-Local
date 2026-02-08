@@ -34,12 +34,15 @@ if [ -z "$WORKSPACE_PATH" ] || [ -z "$AGENT_API_BINARY" ] || [ -z "$BINARY_PATH"
     exit 1
 fi
 
+# 设置 agentapi 端口 (默认 3284)
+AGENT_API_PORT="${AGENT_API_PORT:-61000}"
+
 echo "正在以 $AGENT_TYPE 模式启动 MiniRAG-Local..."
 
 # 1. 启动 agentapi
 ps aux | grep agentapi | grep -v grep | awk '{print $2}' | xargs kill -9 2>/dev/null
 cd "$WORKSPACE_PATH"
-"$AGENT_API_BINARY" server --type="$AGENT_TYPE" -- "$BINARY_PATH" $AGENT_ARGS > /tmp/agentapi.log 2>&1 &
+"$AGENT_API_BINARY" server --port="$AGENT_API_PORT" --type="$AGENT_TYPE" -- "$BINARY_PATH" $AGENT_ARGS > /tmp/agentapi.log 2>&1 &
 
 # 2. 启动 OpenAI 兼容层
 ps aux | grep openai_proxy.js | grep -v grep | awk '{print $2}' | xargs kill -9 2>/dev/null
@@ -47,5 +50,6 @@ node "$PROJECT_ROOT/proxy/openai_proxy.js" > /tmp/openai_proxy.log 2>&1 &
 
 echo "服务已就绪！"
 echo "Agent 类型: $AGENT_TYPE"
-echo "OpenAI 接口地址: http://localhost:${PORT:-8000}/v1/chat/completions"
+echo "AgentAPI 端口: $AGENT_API_PORT"
+echo "OpenAI 接口地址: http://localhost:${PORT:-62000}/v1/chat/completions"
 echo "工作目录: $WORKSPACE_PATH"

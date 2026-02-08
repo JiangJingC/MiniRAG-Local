@@ -16,7 +16,7 @@
 
     // ========== 配置 ==========
     const DEBUG = true; // 设置为 true 开启调试日志，false 关闭
-    const API_BASE = 'http://localhost:8000/v1/chat/completions';
+    const API_BASE = 'http://localhost:62000/v1/chat/completions';
     
     // 状态管理
     const state = {
