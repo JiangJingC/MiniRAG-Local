@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Koal Issue Helper - MiniRAG
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
+// @version      1.2.0
 // @description  为 dev.koal.com 提供 AI 辅助优化 issue 和添加说明的功能
 // @author       大史
 // @match        https://dev.koal.com/*
@@ -15,18 +15,23 @@
     'use strict';
 
     // ========== 配置 ==========
-    const DEBUG = true; // 设置为 true 开启调试日志，false 关闭
+    const DEBUG = true;
     const API_BASE = 'http://localhost:62000/v1/chat/completions';
+    const MAX_CONCURRENT = 1; // 最大并发数
+    
+    // 队列管理
+    const taskQueue = [];
+    let activeRequests = 0;
     
     // 状态管理
     const state = {
         optimize: { loading: false, result: null },
         technical: { loading: false, result: null },
         tests: { loading: false, result: null },
-        impact: { loading: false, result: null }
+        impact: { loading: false, result: null },
+        custom: { loading: false, result: null }
     };
     
-    // 调试日志函数
     function debugLog(message, data) {
         if (DEBUG) {
             console.log(`[MiniRAG Debug] ${message}`, data || '');
@@ -47,6 +52,7 @@
             font-weight: 500;
             transition: all 0.3s ease;
             box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+            position: relative;
         }
         .minirag-btn:hover {
             transform: translateY(-2px);
@@ -62,31 +68,23 @@
         }
         .minirag-btn.loading {
             background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-            animation: pulse 1.5s ease-in-out infinite;
+            cursor: not-allowed;
         }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
-        }
-        .minirag-btn.has-result {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-            position: relative;
-        }
-        .minirag-btn.has-result::after {
-            content: '●';
+        .minirag-btn.loading::after {
+            content: '';
             position: absolute;
-            top: -5px;
-            right: -5px;
-            width: 12px;
-            height: 12px;
-            background: #10b981;
+            top: 50%;
+            left: 50%;
+            width: 16px;
+            height: 16px;
+            margin: -8px 0 0 -8px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: white;
             border-radius: 50%;
-            border: 2px solid white;
-            animation: blink 2s ease-in-out infinite;
+            animation: spinner 0.8s linear infinite;
         }
-        @keyframes blink {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.3; }
+        @keyframes spinner {
+            to { transform: rotate(360deg); }
         }
         .minirag-modal {
             position: fixed;
@@ -105,10 +103,8 @@
             background: white;
             border-radius: 12px;
             padding: 24px;
-            max-width: 700px;
+            max-width: 500px;
             width: 90%;
-            max-height: 80vh;
-            overflow-y: auto;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
         }
         .minirag-modal-header {
@@ -116,49 +112,12 @@
             font-weight: 600;
             margin-bottom: 16px;
             color: #333;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .minirag-close {
-            cursor: pointer;
-            font-size: 24px;
-            color: #999;
-            line-height: 1;
-        }
-        .minirag-close:hover {
-            color: #333;
         }
         .minirag-response {
-            background: #f7f9fc;
-            border-radius: 8px;
             padding: 16px;
-            margin-top: 12px;
-            line-height: 2;
+            line-height: 1.8;
             color: #333;
             font-size: 14px;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-        }
-        .minirag-loading {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-            color: #667eea;
-        }
-        .minirag-spinner {
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #667eea;
-            border-radius: 50%;
-            width: 30px;
-            height: 30px;
-            animation: spin 1s linear infinite;
-            margin-right: 12px;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
         }
         .minirag-error {
             color: #e53e3e;
@@ -166,7 +125,6 @@
             border-left: 4px solid #e53e3e;
             padding: 12px;
             border-radius: 4px;
-            margin-top: 12px;
         }
         .minirag-toolbar {
             position: fixed;
@@ -177,18 +135,69 @@
             gap: 8px;
             z-index: 9999;
         }
+        .minirag-input-modal {
+            max-width: 600px;
+        }
+        .minirag-textarea {
+            width: 100%;
+            min-height: 120px;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+            resize: vertical;
+            margin-bottom: 16px;
+        }
+        .minirag-textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .minirag-modal-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+        .minirag-toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: white;
+            border-radius: 8px;
+            padding: 16px 20px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            z-index: 99999;
+            animation: slideIn 0.3s ease;
+            max-width: 400px;
+        }
+        .minirag-toast.success {
+            border-left: 4px solid #10b981;
+        }
+        .minirag-toast.error {
+            border-left: 4px solid #ef4444;
+        }
+        .minirag-toast.info {
+            border-left: 4px solid #3b82f6;
+        }
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
     `;
 
-    // ========== 注入样式 ==========
     const styleSheet = document.createElement('style');
     styleSheet.textContent = styles;
     document.head.appendChild(styleSheet);
 
     // ========== 工具函数 ==========
     
-    // 获取当前页面的 Issue 内容
     function getIssueContent() {
-        // 尝试多种选择器，适配不同的页面结构
         const selectors = [
             '.issue-description',
             '.issue-body',
@@ -208,11 +217,9 @@
         return '';
     }
 
-    // 获取 Issue 标题
     function getIssueTitle() {
         let title = '';
         
-        // 1. 获取主标题（如：设计文档 #261446）
         const mainTitleSelectors = [
             '#content > h2',
             'h2.inline-flex',
@@ -228,7 +235,6 @@
             }
         }
         
-        // 2. 获取副标题（如：[设计]适配乐研硬件机型）
         const subTitleSelectors = [
             '#content > div.issue > div.subject > div > h3',
             '.subject h3',
@@ -250,17 +256,13 @@
         return title;
     }
 
-    // 获取 Issue Notes（说明/讨论）
     function getIssueNotes() {
         const notes = [];
-        
-        // 查找所有符合条件的 journal 条目
         const journals = document.querySelectorAll('.journal.has-notes, .journal.has-details');
         
         debugLog('找到 journal 条目数量:', journals.length);
         
         journals.forEach((journal, index) => {
-            // 提取说明内容
             const noteDiv = journal.querySelector('.wiki');
             if (noteDiv) {
                 const noteText = noteDiv.innerText.trim();
@@ -278,85 +280,114 @@
         return '';
     }
 
-    // 调用 OpenAI 标准接口
-    async function callMiniRAG(prompt) {
-        debugLog('===== 发送请求 =====');
-        debugLog('API 地址:', API_BASE);
-        debugLog('Prompt 内容:', prompt);
+    // Toast 通知
+    function showToast(message, type = 'info', duration = 3000) {
+        const toast = document.createElement('div');
+        toast.className = `minirag-toast ${type}`;
+        toast.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <div style="font-size: 20px;">
+                    ${type === 'success' ? '✅' : type === 'error' ? '❌' : 'ℹ️'}
+                </div>
+                <div style="flex: 1;">
+                    <div style="font-weight: 600; margin-bottom: 4px; font-size: 14px;">
+                        ${type === 'success' ? '成功' : type === 'error' ? '错误' : '提示'}
+                    </div>
+                    <div style="font-size: 13px; color: #666;">${message}</div>
+                </div>
+            </div>
+        `;
         
+        document.body.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.style.animation = 'slideIn 0.3s ease reverse';
+            setTimeout(() => toast.remove(), 300);
+        }, duration);
+    }
+
+    // 并发控制：执行下一个任务
+    function processQueue() {
+        if (activeRequests >= MAX_CONCURRENT || taskQueue.length === 0) {
+            return;
+        }
+        
+        const task = taskQueue.shift();
+        activeRequests++;
+        
+        task().finally(() => {
+            activeRequests--;
+            processQueue();
+        });
+    }
+
+    // 调用 API（带并发控制）
+    async function callMiniRAG(prompt) {
         return new Promise((resolve, reject) => {
-            const requestData = {
-                model: 'minirag-local',
-                messages: [
-                    {
-                        role: 'user',
-                        content: prompt
-                    }
-                ],
-                temperature: 0.7
-            };
-            
-            debugLog('请求体:', JSON.stringify(requestData, null, 2));
-            
-            GM_xmlhttpRequest({
-                method: 'POST',
-                url: API_BASE,
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                data: JSON.stringify(requestData),
-                timeout: 300000, // 5分钟超时（300秒 = 300000毫秒），与 proxy 保持一致
-                anonymous: true, // 防止浏览器干扰
-                synchronous: false, // 明确异步模式
-                onload: function(response) {
-                    debugLog('===== 收到响应 =====');
-                    debugLog('响应状态:', response.status);
-                    debugLog('响应原文:', response.responseText);
-                    
-                    try {
-                        const data = JSON.parse(response.responseText);
-                        debugLog('解析后的数据:', data);
+            const executeTask = () => new Promise((taskResolve, taskReject) => {
+                debugLog('===== 发送请求 =====');
+                debugLog('API 地址:', API_BASE);
+                debugLog('Prompt 长度:', prompt.length);
+                
+                const requestData = {
+                    model: 'minirag-local',
+                    messages: [{ role: 'user', content: prompt }],
+                    temperature: 0.7
+                };
+                
+                GM_xmlhttpRequest({
+                    method: 'POST',
+                    url: API_BASE,
+                    headers: { 'Content-Type': 'application/json' },
+                    data: JSON.stringify(requestData),
+                    timeout: 300000,
+                    anonymous: true,
+                    synchronous: false,
+                    onload: function(response) {
+                        debugLog('===== 收到响应 =====');
+                        debugLog('响应状态:', response.status);
                         
-                        if (data.choices && data.choices.length > 0) {
-                            let content = data.choices[0].message.content;
-                            debugLog('AI 原始回复:', content);
-                            
-                            // 清理 Gemini 底部信息
-                            content = content.replace(/\d+\s+GEMINI\.md\s+file.*$/gm, '');
-                            content = content.replace(/\d+\s+MCP\s+servers.*$/gm, '');
-                            content = content.replace(/\d+\s+skills.*$/gm, '');
-                            content = content.trim();
-                            
-                            debugLog('清理后的回复:', content);
-                            resolve(content);
-                        } else {
-                            const error = new Error('无效的响应格式');
-                            debugLog('错误:', error);
-                            reject(error);
+                        try {
+                            const data = JSON.parse(response.responseText);
+                            if (data.choices && data.choices.length > 0) {
+                                let content = data.choices[0].message.content;
+                                content = content.replace(/\d+\s+GEMINI\.md\s+file.*$/gm, '');
+                                content = content.replace(/\d+\s+MCP\s+servers.*$/gm, '');
+                                content = content.replace(/\d+\s+skills.*$/gm, '');
+                                content = content.trim();
+                                
+                                taskResolve(content);
+                                resolve(content);
+                            } else {
+                                const error = new Error('无效的响应格式');
+                                taskReject(error);
+                                reject(error);
+                            }
+                        } catch (e) {
+                            taskReject(e);
+                            reject(e);
                         }
-                    } catch (e) {
-                        debugLog('解析错误:', e);
-                        reject(e);
+                    },
+                    onerror: function(error) {
+                        const err = new Error('网络请求失败，请确保 MiniRAG 服务正在运行');
+                        taskReject(err);
+                        reject(err);
+                    },
+                    onabort: function() {
+                        const err = new Error('请求被中止');
+                        taskReject(err);
+                        reject(err);
+                    },
+                    ontimeout: function() {
+                        const err = new Error('请求超时（5分钟）');
+                        taskReject(err);
+                        reject(err);
                     }
-                },
-                onerror: function(error) {
-                    debugLog('网络错误:', error);
-                    // 检查是否是 background shutdown
-                    if (error && error.error === 'background shutdown') {
-                        reject(new Error('请求被浏览器中断（标签页进入后台），请保持标签页激活状态'));
-                    } else {
-                        reject(new Error('网络请求失败，请确保 MiniRAG 服务正在运行'));
-                    }
-                },
-                onabort: function() {
-                    debugLog('请求被中止');
-                    reject(new Error('请求被中止，请重试'));
-                },
-                ontimeout: function() {
-                    debugLog('请求超时（5分钟）');
-                    reject(new Error('请求超时（已等待5分钟），请检查 MiniRAG 服务状态或减少内容长度'));
-                }
+                });
             });
+            
+            taskQueue.push(executeTask);
+            processQueue();
         });
     }
 
@@ -366,15 +397,10 @@
             const modal = document.createElement('div');
             modal.className = 'minirag-modal';
             modal.innerHTML = `
-                <div class="minirag-modal-content" style="max-width: 450px;">
-                    <div class="minirag-modal-header">
-                        <span>⚠️ 确认操作</span>
-                    </div>
+                <div class="minirag-modal-content">
+                    <div class="minirag-modal-header">⚠️ 确认操作</div>
                     <div style="padding: 20px 0; font-size: 15px; color: #333;">
                         ${message}
-                    </div>
-                    <div style="padding: 12px; background: #fff3cd; border-radius: 6px; margin: 10px 0; font-size: 13px; color: #856404;">
-                        <strong>⚠️ 重要提示：</strong>请在 AI 处理完成前保持此标签页激活状态，切换标签页可能导致请求中断。
                     </div>
                     <div style="display: flex; gap: 10px; justify-content: flex-end;">
                         <button class="minirag-confirm-cancel" style="padding: 8px 20px; background: #e2e8f0; border: none; border-radius: 6px; cursor: pointer;">取消</button>
@@ -404,73 +430,45 @@
         });
     }
 
-    // 创建模态框（可关闭，带结束会话按钮）
-    function createModal(title, content, stateKey = null, canClose = true) {
-        const modal = document.createElement('div');
-        modal.className = 'minirag-modal';
-        
-        const endSessionBtn = stateKey ? `
-            <button class="minirag-end-session" style="padding: 6px 12px; background: #ef4444; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; margin-left: 10px;">结束会话</button>
-        ` : '';
-        
-        const closeBtn = canClose ? `<span class="minirag-close">×</span>` : '';
-        
-        modal.innerHTML = `
-            <div class="minirag-modal-content">
-                <div class="minirag-modal-header">
-                    <span>${title}</span>
-                    <div>
-                        ${endSessionBtn}
-                        ${closeBtn}
+    // 创建输入对话框
+    function showPromptInput(title, placeholder) {
+        return new Promise((resolve) => {
+            const modal = document.createElement('div');
+            modal.className = 'minirag-modal';
+            modal.innerHTML = `
+                <div class="minirag-modal-content minirag-input-modal">
+                    <div class="minirag-modal-header">${title}</div>
+                    <textarea class="minirag-textarea" placeholder="${placeholder}"></textarea>
+                    <div class="minirag-modal-buttons">
+                        <button class="minirag-prompt-cancel" style="padding: 8px 20px; background: #e2e8f0; border: none; border-radius: 6px; cursor: pointer;">取消</button>
+                        <button class="minirag-prompt-ok" style="padding: 8px 20px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer;">确认</button>
                     </div>
                 </div>
-                <div class="minirag-response">${content}</div>
-            </div>
-        `;
-        
-        if (canClose) {
-            const closeBtnEl = modal.querySelector('.minirag-close');
-            if (closeBtnEl) {
-                closeBtnEl.onclick = () => modal.remove();
-            }
+            `;
             
-            // 只有可关闭的弹框才允许点击外部关闭
-            modal.onclick = (e) => {
-                if (e.target === modal) modal.remove();
+            document.body.appendChild(modal);
+            
+            const textarea = modal.querySelector('.minirag-textarea');
+            textarea.focus();
+            
+            modal.querySelector('.minirag-prompt-cancel').onclick = () => {
+                modal.remove();
+                resolve(null);
             };
-        }
-        
-        if (stateKey) {
-            const endBtn = modal.querySelector('.minirag-end-session');
-            if (endBtn) {
-                endBtn.onclick = async () => {
-                    const confirmed = await showConfirm('确定要结束当前会话吗？结束后将清除当前结果。');
-                    if (confirmed) {
-                        state[stateKey].result = null;
-                        state[stateKey].loading = false;
-                        updateButtonState(stateKey);
-                        modal.remove();
-                    }
-                };
-            }
-        }
-        
-        document.body.appendChild(modal);
-        return modal;
-    }
-
-    // 显示加载状态（不可关闭）
-    function showLoading(title) {
-        const modal = createModal(title, `
-            <div class="minirag-loading">
-                <div class="minirag-spinner"></div>
-                <div style="text-align: center;">
-                    <div style="margin-bottom: 8px; font-size: 15px; font-weight: 500;">AI 正在思考中...</div>
-                    <div style="font-size: 13px; color: #999;">请保持标签页激活，切换可能导致中断</div>
-                </div>
-            </div>
-        `, null, false);  // canClose = false，加载中不允许关闭
-        return modal;
+            
+            modal.querySelector('.minirag-prompt-ok').onclick = () => {
+                const value = textarea.value.trim();
+                modal.remove();
+                resolve(value || null);
+            };
+            
+            modal.onclick = (e) => {
+                if (e.target === modal) {
+                    modal.remove();
+                    resolve(null);
+                }
+            };
+        });
     }
 
     // 更新按钮状态
@@ -479,20 +477,18 @@
             'optimize': 'minirag-optimize',
             'technical': 'minirag-technical',
             'tests': 'minirag-tests',
-            'impact': 'minirag-impact'
+            'impact': 'minirag-impact',
+            'custom': 'minirag-custom'
         }[stateKey];
         
         const btn = document.getElementById(btnId);
         if (!btn) return;
         
-        btn.classList.remove('loading', 'has-result');
+        btn.classList.remove('loading');
         
         if (state[stateKey].loading) {
             btn.classList.add('loading');
             btn.disabled = true;
-        } else if (state[stateKey].result) {
-            btn.classList.add('has-result');
-            btn.disabled = false;
         } else {
             btn.disabled = false;
         }
@@ -502,108 +498,77 @@
 
     // 1. 优化 Issue
     async function optimizeIssue() {
-        // 🔒 防止重复点击 - 立即检查并锁定
         if (state.optimize.loading) {
-            createModal('⚠️ 提示', '优化任务正在进行中，请稍候...请勿重复点击。');
+            showToast('优化任务正在进行中...', 'info');
             return;
         }
         
-        // 如果有缓存结果，直接显示
-        if (state.optimize.result) {
-            createModal('✨ 优化结果', state.optimize.result, 'optimize');
-            return;
-        }
-        
-        // 确认操作
-        const confirmed = await showConfirm('确定要对当前 Issue 进行优化吗 (请确保在issue有简短的issue信息描述)？');
+        const confirmed = await showConfirm('确定要对当前 Issue 进行优化吗？<br><small style="color: #666;">操作将在后台执行，完成后会通知您刷新页面</small>');
         if (!confirmed) return;
-        
-        // 🔒 再次检查（防止确认期间状态变化）
-        if (state.optimize.loading) {
-            createModal('⚠️ 提示', '优化任务正在进行中，请稍候...');
-            return;
-        }
         
         const title = getIssueTitle();
         const content = getIssueContent();
-        const notes = getIssueNotes();
         
         if (!content && !title) {
-            createModal('❌ 错误', '未找到 Issue 内容，请确认当前页面是否为 Issue 页面');
+            showToast('未找到 Issue 内容', 'error');
             return;
         }
 
-        // 🔒 立即设置 loading 状态并更新 UI
         state.optimize.loading = true;
         updateButtonState('optimize');
-        
-        const loadingModal = showLoading('🚀 优化 Issue');
+        showToast('正在后台优化 Issue...', 'info');
         
         const prompt = `请帮我优化以下 Issue：
 
 标题：
 ${title}
 
+内容：
+${content}
+
 要求：
 1. 优化语言表达，使其更专业清晰
 2. 补充必要的技术细节
 3. 调整格式，使其易于阅读
 
+使用 redmine-issue-optimizer skill直接进行优化这个issue,当你优化issue后,直接回复一个更新成功,其他不用输出。
 
-使用 redmine-issue-optimizer skill直接进行优化这个issue,当你优化issue后,直接回复一个更新成功,其他不用输出
-`;
+**注意：响应内容请控制在800字以内。**`;
 
         try {
-            const response = await callMiniRAG(prompt);
-            state.optimize.result = response;
+            await callMiniRAG(prompt);
             state.optimize.loading = false;
             updateButtonState('optimize');
-            loadingModal.remove();
-            createModal('✨ 优化结果', response, 'optimize');
+            showToast('优化完成！请刷新页面查看结果', 'success', 5000);
         } catch (error) {
             state.optimize.loading = false;
             updateButtonState('optimize');
-            loadingModal.remove();
-            createModal('❌ 错误', `<div class="minirag-error">${error.message}</div>`);
+            showToast(error.message, 'error');
         }
     }
 
     // 2. 添加技术说明
     async function addTechnicalDetails() {
-        // 🔒 防止重复点击
         if (state.technical.loading) {
-            createModal('⚠️ 提示', '技术说明生成任务正在进行中，请稍候...请勿重复点击。');
+            showToast('技术说明生成中...', 'info');
             return;
         }
         
-        if (state.technical.result) {
-            createModal('📋 技术说明', state.technical.result, 'technical');
-            return;
-        }
-        
-        const confirmed = await showConfirm('确定要生成技术说明吗 (请确保在issue有简短的issue信息描述)？');
+        const confirmed = await showConfirm('确定要生成技术说明吗？<br><small style="color: #666;">操作将在后台执行，完成后会通知您刷新页面</small>');
         if (!confirmed) return;
-        
-        // 🔒 再次检查
-        if (state.technical.loading) {
-            createModal('⚠️ 提示', '技术说明生成任务正在进行中，请稍候...');
-            return;
-        }
         
         const title = getIssueTitle();
         const content = getIssueContent();
         const notes = getIssueNotes();
         
         if (!content && !title) {
-            createModal('❌ 错误', '未找到 Issue 内容');
+            showToast('未找到 Issue 内容', 'error');
             return;
         }
 
-        // 🔒 立即锁定
         state.technical.loading = true;
         updateButtonState('technical');
-        
-        const loadingModal = showLoading('📝 生成技术说明');
+        showToast('正在后台生成技术说明...', 'info');
         
         const prompt = `基于以下 Issue，请生成详细的技术说明：
 
@@ -621,59 +586,44 @@ ${content}${notes}
 5. 如果有说明/讨论记录，也要结合分析
 
 请使用 Markdown 格式返回，必须包含标题层级（如 ## 标题、### 子标题等）。
-后面直接通过调用redmin mcp更新这个issue,将结果添加issue的说明(note)中.在你更新issue成功后,直接回复一个更新成功,其他不用输出`;
+后面直接通过调用redmin mcp更新这个issue,将结果添加issue的说明(note)中.在你更新issue成功后,直接回复一个更新成功,其他不用输出。
+
+**注意：响应内容请控制在800字以内。**`;
 
         try {
-            const response = await callMiniRAG(prompt);
-            state.technical.result = response;
+            await callMiniRAG(prompt);
             state.technical.loading = false;
             updateButtonState('technical');
-            loadingModal.remove();
-            createModal('📋 技术说明', response, 'technical');
+            showToast('技术说明已添加！请刷新页面查看', 'success', 5000);
         } catch (error) {
             state.technical.loading = false;
             updateButtonState('technical');
-            loadingModal.remove();
-            createModal('❌ 错误', `<div class="minirag-error">${error.message}</div>`);
+            showToast(error.message, 'error');
         }
     }
 
     // 3. 生成测试用例
     async function generateTestCases() {
-        // 🔒 防止重复点击
         if (state.tests.loading) {
-            createModal('⚠️ 提示', '测试用例生成任务正在进行中，请稍候...请勿重复点击。');
+            showToast('测试用例生成中...', 'info');
             return;
         }
         
-        if (state.tests.result) {
-            createModal('✅ 测试用例', state.tests.result, 'tests');
-            return;
-        }
-        
-        const confirmed = await showConfirm('确定要生成测试用例吗 (请确保在issue有简短的issue信息描述)？');
+        const confirmed = await showConfirm('确定要生成测试用例吗？<br><small style="color: #666;">操作将在后台执行，完成后会通知您刷新页面</small>');
         if (!confirmed) return;
-        
-        // 🔒 再次检查
-        if (state.tests.loading) {
-            createModal('⚠️ 提示', '测试用例生成任务正在进行中，请稍候...');
-            return;
-        }
         
         const title = getIssueTitle();
         const content = getIssueContent();
         const notes = getIssueNotes();
         
         if (!content && !title) {
-            createModal('❌ 错误', '未找到 Issue 内容');
+            showToast('未找到 Issue 内容', 'error');
             return;
         }
 
-        // 🔒 立即锁定
         state.tests.loading = true;
         updateButtonState('tests');
-        
-        const loadingModal = showLoading('🧪 生成测试用例');
+        showToast('正在后台生成测试用例...', 'info');
         
         const prompt = `基于以下 Issue，请生成详细的测试用例：
 
@@ -691,59 +641,44 @@ ${content}${notes}
 5. 如果有说明/讨论记录，也要结合分析
 
 请使用 Markdown 表格格式编写测试用例，表格列包含：测试场景、前置条件、测试步骤、预期结果。
-后面直接通过调用redmin mcp更新这个issue,将结果添加issue的说明(note)中.在你更新issue成功后,直接回复一个更新成功,其他不用输出`;
+后面直接通过调用redmin mcp更新这个issue,将结果添加issue的说明(note)中.在你更新issue成功后,直接回复一个更新成功,其他不用输出。
+
+**注意：响应内容请控制在800字以内。**`;
 
         try {
-            const response = await callMiniRAG(prompt);
-            state.tests.result = response;
+            await callMiniRAG(prompt);
             state.tests.loading = false;
             updateButtonState('tests');
-            loadingModal.remove();
-            createModal('✅ 测试用例', response, 'tests');
+            showToast('测试用例已生成！请刷新页面查看', 'success', 5000);
         } catch (error) {
             state.tests.loading = false;
             updateButtonState('tests');
-            loadingModal.remove();
-            createModal('❌ 错误', `<div class="minirag-error">${error.message}</div>`);
+            showToast(error.message, 'error');
         }
     }
 
     // 4. 波及分析
     async function impactAnalysis() {
-        // 🔒 防止重复点击
         if (state.impact.loading) {
-            createModal('⚠️ 提示', '波及分析任务正在进行中，请稍候...请勿重复点击。');
+            showToast('波及分析进行中...', 'info');
             return;
         }
         
-        if (state.impact.result) {
-            createModal('🔍 波及分析', state.impact.result, 'impact');
-            return;
-        }
-        
-        const confirmed = await showConfirm('确定要进行波及分析吗 (请确保在issue有简短的issue信息描述)？');
+        const confirmed = await showConfirm('确定要进行波及分析吗？<br><small style="color: #666;">操作将在后台执行，完成后会通知您刷新页面</small>');
         if (!confirmed) return;
-        
-        // 🔒 再次检查
-        if (state.impact.loading) {
-            createModal('⚠️ 提示', '波及分析任务正在进行中，请稍候...');
-            return;
-        }
         
         const title = getIssueTitle();
         const content = getIssueContent();
         const notes = getIssueNotes();
         
         if (!content && !title) {
-            createModal('❌ 错误', '未找到 Issue 内容');
+            showToast('未找到 Issue 内容', 'error');
             return;
         }
 
-        // 🔒 立即锁定
         state.impact.loading = true;
         updateButtonState('impact');
-        
-        const loadingModal = showLoading('🔍 波及分析');
+        showToast('正在后台进行波及分析...', 'info');
         
         const prompt = `基于以下 Issue，请进行详细的波及分析：
 
@@ -760,20 +695,61 @@ ${content}${notes}
 4. 说明对现有功能的潜在影响
 5. 提供测试建议和风险评估
 
-请使用 Markdown 格式返回，必须包含标题层级（如 ## 波及分析、### 影响模块等），方便测试团队评估和测试。后面直接通过调用redmin mcp更新这个issue,将结果添加issue的说明(note)中.在你更新issue成功后,直接回复一个更新成功,其他不用输出`;
+请使用 Markdown 格式返回，必须包含标题层级（如 ## 波及分析、### 影响模块等），方便测试团队评估和测试。
+后面直接通过调用redmin mcp更新这个issue,将结果添加issue的说明(note)中.在你更新issue成功后,直接回复一个更新成功,其他不用输出。
+
+**注意：响应内容请控制在800字以内。**`;
 
         try {
-            const response = await callMiniRAG(prompt);
-            state.impact.result = response;
+            await callMiniRAG(prompt);
             state.impact.loading = false;
             updateButtonState('impact');
-            loadingModal.remove();
-            createModal('🔍 波及分析', response, 'impact');
+            showToast('波及分析完成！请刷新页面查看', 'success', 5000);
         } catch (error) {
             state.impact.loading = false;
             updateButtonState('impact');
-            loadingModal.remove();
-            createModal('❌ 错误', `<div class="minirag-error">${error.message}</div>`);
+            showToast(error.message, 'error');
+        }
+    }
+
+    // 5. 自定义 Prompt
+    async function customPrompt() {
+        if (state.custom.loading) {
+            showToast('自定义任务进行中...', 'info');
+            return;
+        }
+        
+        // 获取当前 issue URL（去除参数）
+        const currentUrl = window.location.href.split('?')[0].split('#')[0];
+        
+        // 弹出输入框
+        const userPrompt = await showPromptInput(
+            '🎯 自定义 Prompt',
+            '请输入您想要对这个 issue 进行的操作...\n例如：帮我分析这个需求的技术难点和工作量评估'
+        );
+        
+        if (!userPrompt) return;
+        
+        state.custom.loading = true;
+        updateButtonState('custom');
+        showToast('正在后台执行自定义任务...', 'info');
+        
+        const prompt = `对于这个 issue: ${currentUrl}
+
+我想要进行一些更新:
+${userPrompt}
+
+**注意：响应内容请控制在800字以内。**`;
+
+        try {
+            await callMiniRAG(prompt);
+            state.custom.loading = false;
+            updateButtonState('custom');
+            showToast('自定义任务完成！请刷新页面查看', 'success', 5000);
+        } catch (error) {
+            state.custom.loading = false;
+            updateButtonState('custom');
+            showToast(error.message, 'error');
         }
     }
 
@@ -786,15 +762,16 @@ ${content}${notes}
             <button class="minirag-btn" id="minirag-technical">📝 添加说明</button>
             <button class="minirag-btn" id="minirag-tests">🧪 生成测试</button>
             <button class="minirag-btn" id="minirag-impact">🔍 波及分析</button>
+            <button class="minirag-btn" id="minirag-custom">🎯 自定义</button>
         `;
         
         document.body.appendChild(toolbar);
         
-        // 绑定事件
         document.getElementById('minirag-optimize').onclick = optimizeIssue;
         document.getElementById('minirag-technical').onclick = addTechnicalDetails;
         document.getElementById('minirag-tests').onclick = generateTestCases;
         document.getElementById('minirag-impact').onclick = impactAnalysis;
+        document.getElementById('minirag-custom').onclick = customPrompt;
     }
 
     // ========== 初始化 ==========
@@ -804,8 +781,8 @@ ${content}${notes}
         createToolbar();
     }
 
-    console.log('🎋 Koal Issue Helper - MiniRAG 已加载');
+    console.log('🎋 Koal Issue Helper - MiniRAG v1.2.0 已加载');
     if (DEBUG) {
-        console.log('[MiniRAG] 调试模式已开启，可在控制台查看详细日志');
+        console.log('[MiniRAG] 调试模式已开启');
     }
 })();
