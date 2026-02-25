@@ -6,7 +6,7 @@ curl -v -X POST http://localhost:62000/v1/chat/completions \
   -d '{
     "model": "minirag",
     "messages": [
-      {"role": "user", "content": "你好"}
+      {"role": "user", "content": "你好,你当前在什么目录下,你是什么模型"}
     ]
   }'
 
