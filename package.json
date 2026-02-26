@@ -1,0 +1,28 @@
+{
+  "name": "minirag-local",
+  "version": "1.0.0",
+  "description": "**MiniRAG-Local** 是一个极简、轻量级且完全运行在本地的 RAG（检索增强生成）解决方案。它不依赖向量数据库或复杂的 Embedding 模型，而是通过接入本地终端 AI 助手（如 Claude Code 或 Gemini CLI），直接对本地 Markdown 知识库（如 Obsidian）进行实时检索与问答。",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "example": "examples"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JiangJingC/MiniRAG-Local.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/JiangJingC/MiniRAG-Local/issues"
+  },
+  "homepage": "https://github.com/JiangJingC/MiniRAG-Local#readme",
+  "dependencies": {
+    "dingtalk-stream": "^2.1.4"
+  }
+}
