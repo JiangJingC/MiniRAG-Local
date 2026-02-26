@@ -119,11 +119,19 @@ const server = http.createServer(async (req, res) => {
           .replace(/.*Read\(.*\).*/g, '')
           .replace(/.*Type your message or @path\/to\/file.*/g, '')
           .replace(/.*Press 'i' for INSERT mode.*/g, '')
-          // 4. 处理多余的空格和空行
+          // 4. 处理多余的空格和空行（保留空行以维持 \n\n 段落分隔）
           .split('\n')
-          .map(line => line.trim())
-          .filter(line => line.length > 0)
-          .join('\n');
+          .map(line => line.trimEnd())
+          .reduce((acc, line) => {
+            // Collapse 3+ consecutive blank lines to max 2
+            const lastTwo = acc.slice(-2);
+            if (line === '' && lastTwo.length === 2 && lastTwo[0] === '' && lastTwo[1] === '') {
+              return acc;
+            }
+            return [...acc, line];
+          }, [])
+          .join('\n')
+          .trim();
 
         const openaiRes = {
           id: 'chatcmpl-' + Math.random().toString(36).substring(7),
