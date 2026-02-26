@@ -115,6 +115,40 @@ AGENT_ARGS="--include-directories /path/to/safe/folder"
 ### 3. 前端集成
 您可以将 `examples/agent_api_user_script.js` 导入到浏览器的 **Tampermonkey** 插件中，即可在任何网页右下角呼出您的个人知识库对话框。
 
+## 钉钉群机器人（独立模式）
+
+> 不依赖 OpenClaw，适合公司/团队独立部署。前提：已按上方步骤完成 AgentAPI + Proxy 的部署。
+
+### 配置步骤
+
+**1. 在钉钉开发者后台**（[open.dingtalk.com](https://open.dingtalk.com)）创建企业内部应用，开启「机器人」能力，连接方式选 **Stream 模式**（无需公网 IP）。
+
+**2. 在 `.env` 中补充以下配置：**
+
+```env
+DINGTALK_APP_KEY=你的AppKey
+DINGTALK_APP_SECRET=你的AppSecret
+DINGTALK_RAG_GROUPS={"cidXXXXXX": {"endpoint": "http://localhost:62000/v1/chat/completions", "model": "rag", "timeoutMs": 30000}}
+```
+
+**3. 重启服务：**
+
+```bash
+./scripts/start_ai.sh
+```
+
+机器人启动后，在对应钉钉群中 @ 机器人提问，会先收到"正在查询知识库..."提示，随后返回知识库回答。
+
+### 如何获取 conversationId
+
+在群里 @ 机器人发任意一条消息，查看日志：
+
+```bash
+tail -f /tmp/dingtalk_bot.log
+```
+
+首次收到消息时会打印 conversationId，将其填入 `DINGTALK_RAG_GROUPS` 的 key 即可。
+
 ## 📁 项目结构
 - `proxy/`: OpenAI 协议转换层 (Node.js)
 - `scripts/`: 服务启动与管理脚本
