@@ -48,6 +48,13 @@ cd "$WORKSPACE_PATH"
 ps aux | grep openai_proxy.js | grep -v grep | awk '{print $2}' | xargs kill -9 2>/dev/null
 node "$PROJECT_ROOT/proxy/openai_proxy.js" > /tmp/openai_proxy.log 2>&1 &
 
+# 3. 可选：启动 DingTalk 独立机器人
+if [ -n "$DINGTALK_APP_KEY" ] && [ -n "$DINGTALK_APP_SECRET" ]; then
+    ps aux | grep "dingtalk/bot.js" | grep -v grep | awk '{print $2}' | xargs kill -9 2>/dev/null
+    node "$PROJECT_ROOT/dingtalk/bot.js" > /tmp/dingtalk_bot.log 2>&1 &
+    echo "DingTalk 机器人已启动 (日志: /tmp/dingtalk_bot.log)"
+fi
+
 echo "服务已就绪！"
 echo "Agent 类型: $AGENT_TYPE"
 echo "AgentAPI 端口: $AGENT_API_PORT"
