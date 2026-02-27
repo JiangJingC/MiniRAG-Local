@@ -22,11 +22,11 @@ AGENT_TYPE="${1:-${AGENT:-${DEFAULT_AGENT:-claude}}}"
 case "$AGENT_TYPE" in
     claude)
         BINARY_PATH="$CLAUDE_BINARY"
-        AGENT_ARGS="--dangerously-skip-permissions"
+        AGENT_ARGS="${CLAUDE_ARGS:---dangerously-skip-permissions}"
         ;;
     gemini)
         BINARY_PATH="$GEMINI_BINARY"
-        AGENT_ARGS="--yolo --include-directories $WORKSPACE_PATH"
+        AGENT_ARGS="${GEMINI_ARGS:---yolo --include-directories $WORKSPACE_PATH}"
         ;;
     *)
         echo "错误: 不支持的 Agent 类型 '$AGENT_TYPE' (支持: claude, gemini)"
