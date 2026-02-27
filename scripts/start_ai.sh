@@ -45,13 +45,15 @@ fi
 AGENT_API_PORT="${AGENT_API_PORT:-61000}"
 
 # ── 等待 agentapi 状态变为 stable ──────────────────────────────────────────
+# 用法: wait_for_stable [max_seconds]   默认 30 秒
 wait_for_stable() {
     local url="${AGENT_API_URL:-http://localhost:${AGENT_API_PORT:-61000}}"
     local max_attempts="${1:-30}"
     local i
     for i in $(seq 1 "$max_attempts"); do
         local status
-        status=$(curl -s "$url/status" 2>/dev/null | grep -o '"stable"' || true)
+        # 匹配 key-value 对，避免 "stable" 出现在其他字段时误判
+        status=$(curl -s "$url/status" 2>/dev/null | grep -o '"status"\s*:\s*"stable"' || true)
         if [ -n "$status" ]; then
             return 0
         fi
@@ -72,14 +74,29 @@ if [ -n "$STARTUP_PROMPT" ]; then
     echo "等待 agentapi 就绪以发送 startup prompt..."
     if wait_for_stable 30; then
         local_url="${AGENT_API_URL:-http://localhost:${AGENT_API_PORT:-61000}}"
-        prompt_json=$(python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))' <<< "$STARTUP_PROMPT")
-        curl -s -X POST "$local_url/message" \
-            -H 'Content-Type: application/json' \
-            -d "{\"content\": ${prompt_json}, \"type\": \"user\"}" \
-            > /dev/null
-        echo "Startup prompt 已发送，等待 AI 处理完毕..."
-        wait_for_stable 60
-        echo "AI 初始化完成。"
+        # 检查 python3 是否可用
+        if ! command -v python3 >/dev/null 2>&1; then
+            echo "警告: python3 未找到，跳过 startup prompt（需要 python3 进行 JSON 编码）"
+        else
+            # 安全 JSON 编码（处理引号、换行、特殊字符）
+            if ! prompt_json=$(python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))' <<< "$STARTUP_PROMPT"); then
+                echo "警告: startup prompt JSON 编码失败，跳过"
+            else
+                http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$local_url/message" \
+                    -H 'Content-Type: application/json' \
+                    -d "{\"content\": ${prompt_json}, \"type\": \"user\"}")
+                if [ "$http_code" != "200" ]; then
+                    echo "警告: startup prompt POST 返回 HTTP $http_code"
+                else
+                    echo "Startup prompt 已发送，等待 AI 处理完毕（最多 60 秒）..."
+                    if wait_for_stable 60; then
+                        echo "AI 初始化完成。"
+                    else
+                        echo "警告: AI 在 60 秒内未恢复 stable 状态，继续启动"
+                    fi
+                fi
+            fi
+        fi
     else
         echo "警告: agentapi 在 30 秒内未就绪，跳过 startup prompt"
     fi
