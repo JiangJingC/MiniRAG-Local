@@ -44,12 +44,46 @@ fi
 # 设置 agentapi 端口 (默认 3284)
 AGENT_API_PORT="${AGENT_API_PORT:-61000}"
 
+# ── 等待 agentapi 状态变为 stable ──────────────────────────────────────────
+wait_for_stable() {
+    local url="${AGENT_API_URL:-http://localhost:${AGENT_API_PORT:-61000}}"
+    local max_attempts="${1:-30}"
+    local i
+    for i in $(seq 1 "$max_attempts"); do
+        local status
+        status=$(curl -s "$url/status" 2>/dev/null | grep -o '"stable"' || true)
+        if [ -n "$status" ]; then
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
+}
+
 echo "正在以 $AGENT_TYPE 模式启动 MiniRAG-Local..."
 
 # 1. 启动 agentapi
 ps aux | grep agentapi | grep -v grep | awk '{print $2}' | xargs kill -9 2>/dev/null
 cd "$WORKSPACE_PATH"
 "$AGENT_API_BINARY" server --port="$AGENT_API_PORT" --type="$AGENT_TYPE" -- "$BINARY_PATH" "${AGENT_ARGS[@]}" > /tmp/agentapi.log 2>&1 &
+
+# 1b. 发送 Startup Prompt（如果配置了）
+if [ -n "$STARTUP_PROMPT" ]; then
+    echo "等待 agentapi 就绪以发送 startup prompt..."
+    if wait_for_stable 30; then
+        local_url="${AGENT_API_URL:-http://localhost:${AGENT_API_PORT:-61000}}"
+        prompt_json=$(python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))' <<< "$STARTUP_PROMPT")
+        curl -s -X POST "$local_url/message" \
+            -H 'Content-Type: application/json' \
+            -d "{\"content\": ${prompt_json}, \"type\": \"user\"}" \
+            > /dev/null
+        echo "Startup prompt 已发送，等待 AI 处理完毕..."
+        wait_for_stable 60
+        echo "AI 初始化完成。"
+    else
+        echo "警告: agentapi 在 30 秒内未就绪，跳过 startup prompt"
+    fi
+fi
 
 # 2. 启动 OpenAI 兼容层
 ps aux | grep openai_proxy.js | grep -v grep | awk '{print $2}' | xargs kill -9 2>/dev/null
