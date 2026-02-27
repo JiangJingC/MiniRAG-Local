@@ -1,6 +1,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { parseEnvLine } = require('./env-utils');
 
 // 极简 .env 加载
 function loadEnv() {
@@ -8,12 +9,9 @@ function loadEnv() {
   if (fs.existsSync(envPath)) {
     const content = fs.readFileSync(envPath, 'utf8');
     content.split('\n').forEach(line => {
-      const eqIdx = line.indexOf('=');
-      if (eqIdx === -1) return;
-      const key = line.slice(0, eqIdx).trim();
-      const value = line.slice(eqIdx + 1).trim();
-      if (key && value) {
-        process.env[key] = value;
+      const parsed = parseEnvLine(line);
+      if (parsed && parsed.value) {
+        process.env[parsed.key] = parsed.value;
       }
     });
   }

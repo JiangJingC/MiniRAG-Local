@@ -1,15 +1,5 @@
 import { describe, it, expect } from 'vitest';
-
-// Test the parsing logic in isolation.
-// Mirror the fix we'll implement in loadEnv().
-function parseEnvLine(line) {
-  const eqIdx = line.indexOf('=');
-  if (eqIdx === -1) return null;
-  const key = line.slice(0, eqIdx).trim();
-  const value = line.slice(eqIdx + 1).trim();
-  if (!key || !value) return null;
-  return { key, value };
-}
+import { parseEnvLine } from '../../proxy/env-utils.js';
 
 describe('loadEnv line parser', () => {
   it('parses a simple key=value', () => {
@@ -38,5 +28,10 @@ describe('loadEnv line parser', () => {
 
   it('returns null for lines with empty key', () => {
     expect(parseEnvLine('=somevalue')).toBeNull();
+  });
+
+  it('returns empty string value for KEY= (empty value assignment)', () => {
+    const r = parseEnvLine('KEY=');
+    expect(r).toEqual({ key: 'KEY', value: '' });
   });
 });
