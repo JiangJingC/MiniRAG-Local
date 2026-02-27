@@ -10,7 +10,7 @@
  *   2. Trailing right-pane fragments (after 2+ spaces) → strip suffix
  *      Examples: "esc to interrupt", "thought for 9s)", "↓ 1.8k tokens)"
  *   3. TUI box-drawing characters and misc symbols → strip inline
- *   4. Blank line normalization → collapse >2 consecutive blank lines to 2
+ *   4. Blank line normalization → collapse 2+ consecutive blank lines to 1
  *
  * @param {string} text - Raw AgentAPI response content
  * @returns {string} Cleaned text suitable for markdown rendering

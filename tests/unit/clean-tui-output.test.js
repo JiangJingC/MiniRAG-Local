@@ -74,7 +74,7 @@ describe('cleanTuiOutput', () => {
   });
 
   // Blank line collapsing still works
-  it('collapses 3+ consecutive blank lines to max 2', () => {
+  it('collapses 2+ consecutive blank lines to 1', () => {
     const input = 'a\n\n\n\nb';
     const result = cleanTuiOutput(input);
     expect(result).toBe('a\n\nb');
