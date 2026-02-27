@@ -2,6 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { parseEnvLine } = require('./env-utils');
+const { cleanTuiOutput } = require('./text-utils');
 
 // 极简 .env 加载
 function loadEnv() {
@@ -108,31 +109,7 @@ const server = http.createServer(async (req, res) => {
         }
 
         // --- 清理 TUI 杂质 ---
-        let cleanedResponse = finalResponse
-          // 1. 移除特定的 TUI 符号
-          .replace(/[⏺⎿…▀▄░░✦]/g, '')
-          // 2. 移除常见的制表符/边框字符 (┌ ┐ └ ┘ ├ ┤ ┬ ┴ ┼ ─ │)
-          .replace(/[┌┐└┘├┤┬┴┼─│]/g, '')
-          // 3. 移除思考状态提示 (如 "thought for 1s", "Search(pattern: ...)")
-          .replace(/.*thought for \d+s.*/g, '')
-          .replace(/.*Search\(pattern:.*\).*/g, '')
-          .replace(/.*Bash\(.*\).*/g, '')
-          .replace(/.*Read\(.*\).*/g, '')
-          .replace(/.*Type your message or @path\/to\/file.*/g, '')
-          .replace(/.*Press 'i' for INSERT mode.*/g, '')
-          // 4. 处理多余的空格和空行（保留空行以维持 \n\n 段落分隔）
-          .split('\n')
-          .map(line => line.trimEnd())
-          .reduce((acc, line) => {
-            // Collapse 3+ consecutive blank lines to max 2
-            const lastTwo = acc.slice(-2);
-            if (line === '' && lastTwo.length === 2 && lastTwo[0] === '' && lastTwo[1] === '') {
-              return acc;
-            }
-            return [...acc, line];
-          }, [])
-          .join('\n')
-          .trim();
+        const cleanedResponse = cleanTuiOutput(finalResponse);
 
         const openaiRes = {
           id: 'chatcmpl-' + Math.random().toString(36).substring(7),
