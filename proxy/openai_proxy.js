@@ -22,6 +22,18 @@ loadEnv();
 
 const AGENT_API_URL = process.env.AGENT_API_URL || 'http://localhost:3284';
 const PORT = process.env.PORT || 8000;
+const DEBUG = process.env.DEBUG === 'true' || process.env.DEBUG === '1';
+
+function dbg(label, text) {
+  if (!DEBUG) return;
+  const ts = new Date().toISOString();
+  const sep = '='.repeat(60);
+  console.log(`\n${sep}`);
+  console.log(`[DEBUG][${ts}] ${label}`);
+  console.log(sep);
+  console.log(text);
+  console.log(sep);
+}
 
 const server = http.createServer(async (req, res) => {
   // CORS
@@ -109,7 +121,11 @@ const server = http.createServer(async (req, res) => {
         }
 
         // --- 清理 TUI 杂质 + markdown 段落标准化 ---
-        const cleanedResponse = normalizeRagMarkdown(cleanTuiOutput(finalResponse));
+        dbg('1. RAW (from AgentAPI)', finalResponse);
+        const afterClean = cleanTuiOutput(finalResponse);
+        dbg('2. AFTER cleanTuiOutput', afterClean);
+        const cleanedResponse = normalizeRagMarkdown(afterClean);
+        dbg('3. AFTER normalizeRagMarkdown (final → DingTalk)', cleanedResponse);
 
         const openaiRes = {
           id: 'chatcmpl-' + Math.random().toString(36).substring(7),

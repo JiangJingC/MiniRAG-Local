@@ -1,11 +1,17 @@
 #!/bin/bash
 
+# 确保 Homebrew 工具链在 PATH 中（非交互 shell 可能缺失）
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+
 # 获取脚本所在目录的父目录 (即项目根目录)
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 # 加载 .env 变量
 if [ -f "$PROJECT_ROOT/.env" ]; then
-    export $(cat "$PROJECT_ROOT/.env" | grep -v '^#' | xargs)
+    set -a
+    # shellcheck source=/dev/null
+    source "$PROJECT_ROOT/.env"
+    set +a
 fi
 
 # 确定要使用的 Agent 类型

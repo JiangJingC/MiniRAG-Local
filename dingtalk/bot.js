@@ -40,6 +40,8 @@ try {
     process.exit(1);
 }
 
+const THINKING_MSG = process.env.DINGTALK_THINKING_MSG || '🤔 正在查询知识库，请稍候...';
+
 // ── Dedup ─────────────────────────────────────────────────────────────────────
 
 const DEDUP_TTL_MS = 5 * 60 * 1000;
@@ -103,11 +105,61 @@ async function replyText(sessionWebhook, text) {
     });
 }
 
+// ── Quoted message extraction ─────────────────────────────────────────────────
+
+/**
+ * Extract text from a quoted/reply message and return a readable prefix.
+ * Mirrors the approach in openclaw-channel-dingtalk/src/message-utils.ts.
+ *
+ * Returns a string like '[引用消息: "..."]\n\n' or '' if nothing extractable.
+ */
+function extractQuotedPrefix(msg) {
+    const textField = msg.text;
+
+    if (!textField?.isReplyMsg) return '';
+
+    // Path 1: repliedMsg has inline content (user quoted a plain-text message)
+    const repliedMsg = textField?.repliedMsg;
+    if (repliedMsg) {
+        const content = repliedMsg?.content;
+
+        // Plain text
+        if (content?.text) {
+            const quoteText = content.text.trim();
+            if (quoteText) return `[引用消息: "${quoteText}"]\n\n`;
+        }
+
+        // Rich text array (text/emoji/picture/@mention)
+        if (content?.richText && Array.isArray(content.richText)) {
+            const parts = [];
+            for (const part of content.richText) {
+                if (part.msgType === 'text' && part.content) {
+                    parts.push(part.content);
+                } else if (part.msgType === 'emoji' || part.type === 'emoji') {
+                    parts.push(part.content || '[表情]');
+                } else if (part.msgType === 'picture' || part.type === 'picture') {
+                    parts.push('[图片]');
+                } else if (part.msgType === 'at' || part.type === 'at') {
+                    parts.push(`@${part.content || part.atName || '某人'}`);
+                } else if (part.text) {
+                    parts.push(part.text);
+                }
+            }
+            const quoteText = parts.join('').trim();
+            if (quoteText) return `[引用消息: "${quoteText}"]\n\n`;
+        }
+    }
+
+    // Path 2: only originalMsgId available (e.g. bot markdown reply — DingTalk
+    // marks these as "unknownMsgType" with no content field). No usable text,
+    // return empty so the user's follow-up question is sent without a noisy prefix.
+    return '';
+}
+
 // ── Message handler ───────────────────────────────────────────────────────────
 
 async function handleMessage(res) {
-    const { headers, data } = res;
-    const sessionWebhook = headers.sessionWebhook;
+    const { data } = res;
 
     let msg;
     try {
@@ -116,6 +168,8 @@ async function handleMessage(res) {
         return { status: 'SUCCESS', message: '' };
     }
 
+    // sessionWebhook is in the message payload, not stream headers
+    const sessionWebhook = msg.sessionWebhook;
     const { msgId, conversationId, conversationType, text, msgtype } = msg;
 
     // Only handle group messages (conversationType === '2')
@@ -132,11 +186,23 @@ async function handleMessage(res) {
     if (!groupConfig) return { status: 'SUCCESS', message: '' };
 
     // Strip @mention prefix (DingTalk prepends "@BotName " to the text)
-    const question = text.content.replace(/^@\S+\s*/, '').trim();
-    if (!question) return { status: 'SUCCESS', message: '' };
+    const userInput = text.content.replace(/^@\S+\s*/, '').trim();
+
+    // Extract quoted message prefix (if this is a reply/quote message)
+    const quotedPrefix = extractQuotedPrefix(msg);
+
+    // If user quoted a message but typed nothing after @, prompt them
+    if (!userInput && !quotedPrefix) return { status: 'SUCCESS', message: '' };
+    if (!userInput && quotedPrefix) {
+        await replyText(sessionWebhook, '请在 @ 后面写上你的问题').catch(() => {});
+        return { status: 'SUCCESS', message: '' };
+    }
+
+    // Build final question: quoted context + user input
+    const question = quotedPrefix + userInput;
 
     // Send thinking indicator
-    await replyText(sessionWebhook, '🤔 正在使用本地知识库处理，请稍候...').catch(() => {});
+    await replyText(sessionWebhook, THINKING_MSG).catch(() => {});
 
     // Query RAG
     let answer;
