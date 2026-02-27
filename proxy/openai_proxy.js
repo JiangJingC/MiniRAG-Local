@@ -8,9 +8,12 @@ function loadEnv() {
   if (fs.existsSync(envPath)) {
     const content = fs.readFileSync(envPath, 'utf8');
     content.split('\n').forEach(line => {
-      const [key, value] = line.split('=');
+      const eqIdx = line.indexOf('=');
+      if (eqIdx === -1) return;
+      const key = line.slice(0, eqIdx).trim();
+      const value = line.slice(eqIdx + 1).trim();
       if (key && value) {
-        process.env[key.trim()] = value.trim();
+        process.env[key] = value;
       }
     });
   }
