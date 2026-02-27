@@ -10,7 +10,7 @@ function loadEnv() {
     const content = fs.readFileSync(envPath, 'utf8');
     content.split('\n').forEach(line => {
       const parsed = parseEnvLine(line);
-      if (parsed && parsed.value) {
+      if (parsed !== null) {
         process.env[parsed.key] = parsed.value;
       }
     });
