@@ -160,7 +160,7 @@ const client = new DWClient({
     clientSecret: APP_SECRET,
 });
 
-client.registerCallbackListener(TOPIC_ROBOT, handleMessage).start();
+client.registerCallbackListener(TOPIC_ROBOT, handleMessage).connect();
 
 console.log('DingTalk bot started. Listening for group messages...');
 console.log('Configured groups:', Object.keys(RAG_GROUPS).length);
