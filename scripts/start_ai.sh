@@ -19,14 +19,15 @@ fi
 AGENT_TYPE="${1:-${AGENT:-${DEFAULT_AGENT:-claude}}}"
 
 # 根据类型设置二进制路径和参数
+# CLAUDE_ARGS / GEMINI_ARGS 可在 .env 中覆盖，留空则使用下方默认值
 case "$AGENT_TYPE" in
     claude)
         BINARY_PATH="$CLAUDE_BINARY"
-        AGENT_ARGS="${CLAUDE_ARGS:---dangerously-skip-permissions}"
+        read -ra AGENT_ARGS <<< "${CLAUDE_ARGS:---dangerously-skip-permissions}"
         ;;
     gemini)
         BINARY_PATH="$GEMINI_BINARY"
-        AGENT_ARGS="${GEMINI_ARGS:---yolo --include-directories $WORKSPACE_PATH}"
+        read -ra AGENT_ARGS <<< "${GEMINI_ARGS:---yolo --include-directories $WORKSPACE_PATH}"
         ;;
     *)
         echo "错误: 不支持的 Agent 类型 '$AGENT_TYPE' (支持: claude, gemini)"
@@ -48,7 +49,7 @@ echo "正在以 $AGENT_TYPE 模式启动 MiniRAG-Local..."
 # 1. 启动 agentapi
 ps aux | grep agentapi | grep -v grep | awk '{print $2}' | xargs kill -9 2>/dev/null
 cd "$WORKSPACE_PATH"
-"$AGENT_API_BINARY" server --port="$AGENT_API_PORT" --type="$AGENT_TYPE" -- "$BINARY_PATH" $AGENT_ARGS > /tmp/agentapi.log 2>&1 &
+"$AGENT_API_BINARY" server --port="$AGENT_API_PORT" --type="$AGENT_TYPE" -- "$BINARY_PATH" "${AGENT_ARGS[@]}" > /tmp/agentapi.log 2>&1 &
 
 # 2. 启动 OpenAI 兼容层
 ps aux | grep openai_proxy.js | grep -v grep | awk '{print $2}' | xargs kill -9 2>/dev/null
