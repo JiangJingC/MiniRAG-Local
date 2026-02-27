@@ -62,4 +62,61 @@ function cleanTuiOutput(text) {
         .trim();
 }
 
-module.exports = { cleanTuiOutput };
+/**
+ * Normalize markdown paragraph spacing for DingTalk rendering.
+ * DingTalk requires \n\n between paragraphs and headings.
+ * Ported from openclaw-channel-dingtalk/src/message-utils.ts.
+ *
+ * Rules:
+ *   - Never inject blank lines inside fenced code blocks
+ *   - After headings: always inject blank line
+ *   - Between consecutive list items: no blank line
+ *   - All other non-empty → non-empty transitions: inject blank line
+ *   - Unclosed fence suppresses all injection for the remainder
+ *
+ * @param {string} text - Cleaned markdown text
+ * @returns {string} Markdown with \n\n between paragraphs/headings
+ */
+function normalizeRagMarkdown(text) {
+    const lines = text.split('\n');
+    const result = [];
+    let inFence = false;
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const nextLine = lines[i + 1];
+        result.push(line);
+
+        // Toggle fenced code block state.
+        if (/^```/.test(line)) {
+            inFence = !inFence;
+        }
+
+        // Inside a code fence, never insert blank lines.
+        if (inFence) continue;
+
+        // Already followed by blank line or end of text — no action needed.
+        if (nextLine === '' || nextLine === undefined) continue;
+
+        const isCurrentHeading = /^#{1,6}\s/.test(line);
+        const isCurrentListItem = /^[-*+]\s|^\d+\.\s/.test(line);
+        const isNextListItem = /^[-*+]\s|^\d+\.\s/.test(nextLine);
+        const isCurrentEmpty = line === '';
+
+        // Never insert blank lines when current line is empty.
+        if (isCurrentEmpty) continue;
+
+        // Between two consecutive list items: no blank line.
+        if (isCurrentListItem && isNextListItem) continue;
+
+        // Insert blank line after headings.
+        if (isCurrentHeading) { result.push(''); continue; }
+
+        // Insert blank line in all other non-empty → non-empty transitions.
+        result.push('');
+    }
+
+    return result.join('\n');
+}
+
+module.exports = { cleanTuiOutput, normalizeRagMarkdown };

@@ -2,7 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { parseEnvLine } = require('./env-utils');
-const { cleanTuiOutput } = require('./text-utils');
+const { cleanTuiOutput, normalizeRagMarkdown } = require('./text-utils');
 
 // 极简 .env 加载
 function loadEnv() {
@@ -108,8 +108,8 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
-        // --- 清理 TUI 杂质 ---
-        const cleanedResponse = cleanTuiOutput(finalResponse);
+        // --- 清理 TUI 杂质 + markdown 段落标准化 ---
+        const cleanedResponse = normalizeRagMarkdown(cleanTuiOutput(finalResponse));
 
         const openaiRes = {
           id: 'chatcmpl-' + Math.random().toString(36).substring(7),
